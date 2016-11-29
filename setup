@@ -1,0 +1,27 @@
+#!/bin/bash -exu
+
+function setup_index(){
+curl -XPUT "${ELASTICSEARCH_ENDPOINT}/${ELASTICSEARCH_BUILD_NODE}" -d '
+{
+ "mappings" : {
+  "_default_" : {
+   "properties" : {
+    "build_event_id" : {"type": "integer"},
+    "build_event_type" : {"type": "string", "index" : "not_analyzed" },
+    "payload" : { "type" : "string","index": "not_analyzed" },
+    "event_id" : { "type" : "integer" },
+    "version" : { "type" : "string" }
+   }
+  }
+ }
+}
+'
+
+}
+
+function main(){
+	setup_index
+}
+
+
+main $@

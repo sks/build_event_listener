@@ -1,0 +1,11 @@
+#!/bin/bash -exu
+
+function delete_index(){
+  curl -XDELETE "${ELASTICSEARCH_ENDPOINT}/${ELASTICSEARCH_BUILD_NODE}"
+}
+
+function main(){
+  delete_index
+}
+
+main $@

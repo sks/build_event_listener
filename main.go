@@ -1,19 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"os"
 	"time"
 
 	pq "github.com/lib/pq"
 )
 
-var processedTillRow int
+var (
+	processedTillRow      int
+	conninfo              = "postgres://concourse:changeme@localhost/concourse?sslmode=disable"
+	elasticSearchEndpoint = os.Getenv("ELASTICSEARCH_ENDPOINT")
+)
 
 func main() {
-
-	conninfo := "postgres://concourse:changeme@localhost/concourse?sslmode=disable"
 
 	db, err := sql.Open("postgres", conninfo)
 	if err != nil {
@@ -40,11 +47,11 @@ func main() {
 }
 
 type buildEvent struct {
-	buildEventId   int
-	buildeventType string
-	payload        string
-	eventId        int
-	version        string
+	BuildEventId   int    `json:"build_event_id"`
+	BuildeventType string `json:"build_event_type"`
+	Payload        string `json:"payload"`
+	EventId        int    `json:"event_id"`
+	Version        string `json:"version"`
 }
 
 func doWork(db *sql.DB, totalRows int) {
@@ -56,14 +63,17 @@ func doWork(db *sql.DB, totalRows int) {
 		return
 	}
 	defer rows.Close()
+	index := processedTillRow
+
 	buildEvent := buildEvent{}
 	for rows.Next() {
-		err := rows.Scan(&buildEvent.buildEventId, &buildEvent.buildeventType, &buildEvent.payload, &buildEvent.eventId, &buildEvent.version)
+		err := rows.Scan(&buildEvent.BuildEventId, &buildEvent.BuildeventType, &buildEvent.Payload, &buildEvent.EventId, &buildEvent.Version)
 		if err != nil {
 			log.Printf("[ERR] error decoding the row %+v", rows, err)
 			continue
 		}
-		err = processBuildEvent(buildEvent)
+		index++
+		err = processBuildEvent(index, buildEvent)
 		if err != nil {
 			log.Printf("[ERR] error processing the row %+v", rows, err)
 			continue
@@ -74,8 +84,35 @@ func doWork(db *sql.DB, totalRows int) {
 	// work here
 }
 
-func processBuildEvent(buildEvent buildEvent) error {
-	log.Printf("%+v", buildEvent)
+func processBuildEvent(index int, buildEvent buildEvent) error {
+	url := fmt.Sprintf("%s/%s/build_event/%d", elasticSearchEndpoint, os.Getenv("ELASTICSEARCH_BUILD_NODE"), index)
+	jsonStr, err := json.Marshal(buildEvent)
+	if err != nil {
+		log.Println("[ERR] creating request body", err)
+		return err
+	}
+	log.Printf("Processing the build id : %d and build event: %d", buildEvent.BuildEventId, buildEvent.EventId)
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonStr))
+	if err != nil {
+		log.Fatal("Creating the new request failed: ", err)
+		return err
+	}
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[ERR] error sending the build event %+v to Elastic Search %s: %s", buildEvent, url, err)
+		return err
+	}
+	defer resp.Body.Close()
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[ERR] Error reading the response", err)
+		return err
+	}
+	log.Println(string(responseBody))
 	return nil
 }
 
@@ -89,7 +126,7 @@ func checkForWork(db *sql.DB) {
 			continue
 		}
 		if processedTillRow < totalRows {
-			go doWork(db, totalRows)
+			doWork(db, totalRows)
 		}
 	}
 }
