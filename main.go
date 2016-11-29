@@ -47,11 +47,29 @@ func main() {
 }
 
 type buildEvent struct {
-	BuildEventId   int    `json:"build_event_id"`
-	BuildeventType string `json:"build_event_type"`
-	Payload        string `json:"payload"`
-	EventId        int    `json:"event_id"`
-	Version        string `json:"version"`
+	BuildEventId   int      `json:"build_event_id"`
+	BuildeventType string   `json:"build_event_type"`
+	Payload        *Payload `json:"payload"`
+	EventId        int      `json:"event_id"`
+	Version        string   `json:"version"`
+}
+
+type Payload struct {
+	Origin     *map[string]interface{}   `json:"origin" omitempty`
+	Plan       *map[string]interface{}   `json:"plan" omitempty`
+	ExitStatus *int                      `json:"exit_status" omitEmpty`
+	Version    *map[string]interface{}   `json: "version" omitempty`
+	Metadata   *[]map[string]interface{} `json:"metadata" omitempty`
+	Payload    *string                   `json:"payload" omitempty`
+	Status     *string                   `json:"status" omitempty`
+	Time       *int                      `json:"time" omitempty`
+}
+
+func generatePayload(payload string) (*Payload, error) {
+	fmt.Println("Payload :", payload)
+	var returnPayload Payload
+	err := json.Unmarshal([]byte(payload), &returnPayload)
+	return &returnPayload, err
 }
 
 func doWork(db *sql.DB, totalRows int) {
@@ -66,13 +84,20 @@ func doWork(db *sql.DB, totalRows int) {
 	index := processedTillRow
 
 	buildEvent := buildEvent{}
+	var payload string
 	for rows.Next() {
-		err := rows.Scan(&buildEvent.BuildEventId, &buildEvent.BuildeventType, &buildEvent.Payload, &buildEvent.EventId, &buildEvent.Version)
+		err := rows.Scan(&buildEvent.BuildEventId, &buildEvent.BuildeventType, &payload, &buildEvent.EventId, &buildEvent.Version)
 		if err != nil {
 			log.Printf("[ERR] error decoding the row %+v", rows, err)
 			continue
 		}
 		index++
+		buildEvent.Payload, err = generatePayload(payload)
+		if err != nil {
+			log.Printf("[ERR] error decoding payload %s", payload)
+			continue
+		}
+
 		err = processBuildEvent(index, buildEvent)
 		if err != nil {
 			log.Printf("[ERR] error processing the row %+v", rows, err)
@@ -81,7 +106,6 @@ func doWork(db *sql.DB, totalRows int) {
 	}
 
 	processedTillRow = totalRows
-	// work here
 }
 
 func processBuildEvent(index int, buildEvent buildEvent) error {
@@ -112,7 +136,7 @@ func processBuildEvent(index int, buildEvent buildEvent) error {
 		log.Printf("[ERR] Error reading the response", err)
 		return err
 	}
-	log.Println(string(responseBody))
+	log.Printf("Reponse from ELK Stack: %s", string(responseBody))
 	return nil
 }
 

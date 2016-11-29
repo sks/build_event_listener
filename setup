@@ -8,7 +8,9 @@ curl -XPUT "${ELASTICSEARCH_ENDPOINT}/${ELASTICSEARCH_BUILD_NODE}" -d '
    "properties" : {
     "build_event_id" : {"type": "integer"},
     "build_event_type" : {"type": "string", "index" : "not_analyzed" },
-    "payload" : { "type" : "string","index": "not_analyzed" },
+    "payload" : {
+	  "type" : "object"
+    },
     "event_id" : { "type" : "integer" },
     "version" : { "type" : "string" }
    }
